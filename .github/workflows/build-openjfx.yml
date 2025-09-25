@@ -13,6 +13,7 @@ jobs:
     steps:
       - name: Checkout builder repo
         uses: actions/checkout@v4
+        echo "GOT IT"
       - name: Install dependencies
         run: |
           set -x
