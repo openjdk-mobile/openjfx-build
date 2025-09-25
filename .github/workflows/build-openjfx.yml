@@ -43,7 +43,8 @@ jobs:
           cd build/jfx
           make images
           cd images
-          zip -r ../../../openjdx-jfx-linux-x86_64.zip jdk
+          ls -l ../../../../
+          zip -r ../../../../openjdx-jfx-linux-x86_64.zip jdk
 
       - name: Create snapshot release 
         uses: softprops/action-gh-release@v2
