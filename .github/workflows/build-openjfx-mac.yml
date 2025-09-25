@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: "macos-latest"
+    runs-on: "macos-14"
 
     steps:
       - name: Checkout builder repo
@@ -21,7 +21,7 @@ jobs:
         run: |
           # Run Homebrew installation and xcode-select
           brew install autoconf make
-          sudo xcode-select --switch /Applications/Xcode_${{ inputs.xcode-toolset-version }}.app/Contents/Developer
+          sudo xcode-select --switch /Applications/Xcode_15.4.app/Contents/Developer
           # This will make GNU make available as 'make' and not only as 'gmake' 
           echo '/usr/local/opt/make/libexec/gnubin' >> $GITHUB_PATH
       - name: Clone OpenJDK Mobile sources 
