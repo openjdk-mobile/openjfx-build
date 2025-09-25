@@ -28,28 +28,18 @@ jobs:
           distribution: 'temurin'
       - name: Clone OpenJDK Mobile sources 
         run: |
-          echo "JVDBG0"
-          ls
-          echo "JVDBG1"
-          ls -l .
-          echo "JVDBG2"
           git clone https://github.com/openjdk/mobile.git
           cd mobile
-          echo "JVDBG3"
-          ls -l .
-          echo "JVDBG4"
-          ls -l ..
-          echo "JVDBG5"
           patch -p1 <../openjdk-ext/src/jfx.patch
           cd ..
-          echo "DONE"
       - name: Clone OpenJFX
         run: |
           git clone https://github.com/openjdk/jfx.git
+          cd jfx
+          sh gradlew shadersClasses
+          cd ..
           cd mobile
           sh configure --with-conf-name=jfx --with-openjfx-modules=../jfx --disable-warnings-as-errors
           cd build/jfx
           make images
-
-
 
