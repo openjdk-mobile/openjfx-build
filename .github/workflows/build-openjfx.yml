@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Checkout builder repo
         uses: actions/checkout@v4
-        echo "GOT IT"
+        run: echo "Hello from GitHub Actions!"
       - name: Install dependencies
         run: |
           set -x
