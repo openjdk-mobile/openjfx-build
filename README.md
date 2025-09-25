@@ -1,2 +1,3 @@
 # openjfx-build
-Building OpenJFX using OpenJDK
+In this repository, we create Github Actions that build OpenJFX for desktop and mobile platforms, using the OpenJDK build system.
+
