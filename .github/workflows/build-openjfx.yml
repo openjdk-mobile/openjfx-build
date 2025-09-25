@@ -1,0 +1,55 @@
+name: Build OpenJFX
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - openjfxtest
+
+jobs:
+  build:
+    runs-on: "ubuntu-24.04"
+
+    steps:
+      - name: Checkout builder repo
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          set -x
+          sudo apt-get update
+          sudo apt-get install ant libgl1-mesa-dev libx11-dev libxxf86vm-dev libxt-dev pkg-config libgtk2.0-dev libgtk-3-dev libxtst-dev gcc-14 g++-14 libasound2-dev libcups2-dev
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100 --slave /usr/bin/g++ g++ /usr/bin/g++-14
+      - name: Set up JDK 24
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: '24'
+          distribution: 'temurin'
+      - name: Clone OpenJDK Mobile sources 
+        run: |
+          echo "JVDBG0"
+          ls
+          echo "JVDBG1"
+          ls -l .
+          echo "JVDBG2"
+          git clone https://github.com/openjdk/mobile.git
+          cd mobile
+          echo "JVDBG3"
+          ls -l .
+          echo "JVDBG4"
+          ls -l ..
+          echo "JVDBG5"
+          patch -p1 <../openjdk-ext/src/jfx.patch
+          cd ..
+          echo "DONE"
+      - name: Clone OpenJFX
+        run: |
+          git clone https://github.com/openjdk/jfx.git
+          cd mobile
+          sh configure --with-conf-name=jfx --with-openjfx-modules=../jfx --disable-warnings-as-errors
+          cd build/jfx
+          make images
+
+
+
