@@ -415,7 +415,7 @@ index 00000000000..b00c524241c
 +    OPTIMIZATION := HIGH, \
 +    SRC := $(PLATFORM_GLASS_SRC), \
 +    LIBS_linux := -lX11, \
-+    LIBS_macosx := -framework AppKit -framework ApplicationServices -framework Carbon -framework OpenGL -framework QuartzCore -framework Security -framework Network, \
++    LIBS_macosx := -framework AppKit -framework ApplicationServices -framework Metal -framework Carbon -framework OpenGL -framework QuartzCore -framework Security -framework Network, \
 +    EXTRA_FILES := $(EXTRA_GLASS_SRC), \
 +    CFLAGS_macosx := -DMACOS_MIN_VERSION_MAJOR=11 -DMACOS_MIN_VERSION_MINOR=0, \
 +))
