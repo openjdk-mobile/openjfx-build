@@ -40,4 +40,16 @@ jobs:
           sh configure --with-conf-name=jfx --with-openjfx-modules=../jfx --disable-warnings-as-errors
           cd build/jfx
           make images
+          cd images
+          ls -l ../../../../
+          zip -r ../../../../openjdk-jfx-mac-aarch64.zip jdk
+
+      - name: Create snapshot release 
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Snapshot release"
+          tag_name: snapshot
+          prerelease: true
+          files: |
+            openjdk-jfx-mac-aarch64.zip jdk
 
