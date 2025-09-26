@@ -5,8 +5,51 @@ on:
 
 jobs:
   build:
-    runs-on: "macos-latest"
+    runs-on: "macos-14"
 
     steps:
       - name: Checkout builder repo
         uses: actions/checkout@v4
+      - name: Set up JDK 24
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: '24'
+          distribution: 'temurin'
+      - name: 'Install toolchain and dependencies'
+        run: |
+          # Run Homebrew installation and xcode-select
+          brew install autoconf make
+          sudo xcode-select --switch /Applications/Xcode_15.4.app/Contents/Developer
+          # This will make GNU make available as 'make' and not only as 'gmake' 
+          echo '/usr/local/opt/make/libexec/gnubin' >> $GITHUB_PATH
+      - name: Clone OpenJDK Mobile sources 
+        run: |
+          git clone https://github.com/openjdk/mobile.git
+          cd mobile
+          patch -p1 <../openjdk-ext/src/jfx.patch
+          cd ..
+      - name: Clone OpenJFX
+        run: |
+          git clone https://github.com/openjdk/jfx.git
+          cd jfx
+          sh gradlew shadersClasses
+          cd ..
+          cd mobile
+          sh configure --with-conf-name=jfx --with-openjfx-modules=../jfx --disable-warnings-as-errors
+          cd build/jfx
+          make images
+          cd images
+          ls -l ../../../../
+          zip -r ../../../../openjdk-jfx-mac-aarch64.zip jdk
+
+      - name: Create snapshot release 
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Snapshot release"
+          tag_name: snapshot
+          prerelease: true
+          files: |
+            openjdk-jfx-mac-aarch64.zip jdk
+
