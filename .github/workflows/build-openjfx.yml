@@ -2,9 +2,6 @@ name: Build OpenJFX
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - build
 
 jobs:
   build:
