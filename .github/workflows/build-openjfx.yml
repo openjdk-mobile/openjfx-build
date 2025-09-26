@@ -44,7 +44,7 @@ jobs:
           make images
           cd images
           ls -l ../../../../
-          zip -r ../../../../openjdx-jfx-linux-x86_64.zip jdk
+          zip -r ../../../../openjdk-jfx-linux-x86_64.zip jdk
 
       - name: Create snapshot release 
         uses: softprops/action-gh-release@v2
@@ -53,6 +53,6 @@ jobs:
           tag_name: snapshot
           prerelease: true
           files: |
-            openjdx-jfx-linux-x86_64.zip
+            openjdk-jfx-linux-x86_64.zip
 
 
