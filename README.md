@@ -18,6 +18,8 @@ including the JavaFX modules from the latest OpenJFX sources.
 
 ## How it works
 
+This repository contain scripts in the [.github/workflows](.github/workflows) directory. Currently, we have a
+[a script for linux](.github/workflows/build-openjfx.yml) and [a script for mac](.github/workflows/build-openjfx-mac.yml)
 The scripts in this repository do the following:
 
 * Download the latest OpenJDK/mobile code
