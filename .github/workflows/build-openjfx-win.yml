@@ -26,6 +26,8 @@ jobs:
         run: |
           git clone https://github.com/openjdk/mobile.git
           cd mobile
+          ls -l ..
+          ls -l ../openjdk-ext
           patch -p1 <../openjdk-ext/src/jfx.patch
           cd ..
       - name: Clone OpenJFX
