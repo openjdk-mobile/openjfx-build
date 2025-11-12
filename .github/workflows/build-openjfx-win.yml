@@ -17,15 +17,19 @@ jobs:
         with:
           java-version: '24'
           distribution: 'temurin'
+      - name: Set up Cygwin
+        uses: egor-tensin/setup-cygwin@v4
+        with:
+          packages: make autoconf zip unzip
       - name: Clone OpenJDK Mobile sources 
-        shell: bash
+        shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
         run: |
           git clone https://github.com/openjdk/mobile.git
           cd mobile
           patch -p1 <../openjdk-ext/src/jfx.patch
           cd ..
       - name: Clone OpenJFX
-        shell: bash
+        shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
         run: |
           git clone https://github.com/openjdk/jfx.git
           cd jfx
