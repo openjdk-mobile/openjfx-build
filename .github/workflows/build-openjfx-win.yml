@@ -18,12 +18,14 @@ jobs:
           java-version: '24'
           distribution: 'temurin'
       - name: Clone OpenJDK Mobile sources 
+        shell: bash
         run: |
           git clone https://github.com/openjdk/mobile.git
           cd mobile
           patch -p1 <../openjdk-ext/src/jfx.patch
           cd ..
       - name: Clone OpenJFX
+        shell: bash
         run: |
           git clone https://github.com/openjdk/jfx.git
           cd jfx
