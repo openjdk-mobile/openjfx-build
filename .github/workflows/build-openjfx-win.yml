@@ -26,12 +26,7 @@ jobs:
         run: |
           git clone https://github.com/openjdk/mobile.git
           cd mobile
-          pwd
-          ls -l
-          ls -l ..
-          ls -l ../openjdk-ext
-          patch -p1 <../openjdk-ext/src/jfx.patch
-          cd ..
+          patch -p1 < $GITHUB_WORKSPACE/openjdk-ext/src/jfx.patch
       - name: Clone OpenJFX
         shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
         run: |
