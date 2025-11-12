@@ -10,12 +10,12 @@ jobs:
     steps:
       - name: Checkout builder repo
         uses: actions/checkout@v4
-      - name: Set up JDK 24
+      - name: Set up JDK 25
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: actions/setup-java@v4
         with:
-          java-version: '24'
+          java-version: '25'
           distribution: 'temurin'
       - name: Set up Cygwin
         uses: egor-tensin/setup-cygwin@v4
