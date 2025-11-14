@@ -32,7 +32,7 @@ jobs:
         run: |
           git clone https://github.com/openjdk/jfx.git
           cd jfx
-          sh gradlew shadersClasses
+          sh gradlew shadersClasses processShaders generateD3DHeaders
           cd ..
           cd mobile
           sh configure --with-conf-name=jfx --with-openjfx-modules=../jfx --disable-warnings-as-errors
