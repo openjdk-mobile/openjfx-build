@@ -1,9 +1,3 @@
-commit 8f0fad6eaa6b3575009a03b0b88e850b8c8577f9
-Author: Johan Vos <johan@lodgon.com>
-Date:   Thu Sep 25 11:06:32 2025 +0200
-
-    Add javafx specific patch
-
 diff --git a/README_OpenJFX.md b/README_OpenJFX.md
 new file mode 100644
 index 00000000000..412f2115e37
@@ -260,7 +254,7 @@ index 3271b889867..a1ead0f6936 100644
  
  # Find all modules by looking for module-info.java files and looking at parent
  # directories.
-@@ -149,7 +153,11 @@ FindImportedModules = \
+@@ -149,7 +153,13 @@ FindImportedModules = \
  FindModuleSrcDirs = \
      $(strip $(wildcard \
          $(addsuffix /$(strip $1), $(GENERATED_SRC_DIRS) $(IMPORT_MODULES_SRC)) \
@@ -275,7 +269,7 @@ index 3271b889867..a1ead0f6936 100644
  
  # Find all specs dirs for a particular module
  # $1 - Module to find specs dirs for
-@@ -171,7 +179,10 @@ FindModuleManDirsForDocs = \
+@@ -171,7 +181,12 @@ FindModuleManDirsForDocs = \
  GetModuleSrcPath = \
      $(call PathList, \
          $(addsuffix /*, $(GENERATED_SRC_DIRS) $(IMPORT_MODULES_SRC)) \
@@ -343,7 +337,7 @@ new file mode 100644
 index 00000000000..a892af72d47
 --- /dev/null
 +++ b/make/modules/javafx.graphics/Java.gmk
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,21 @@
 +DISABLED_WARNINGS_java := try deprecation rawtypes unchecked serial cast removal preview restricted dangling-doc-comments overloads module this-escape \
 +                          lossy-conversions static auxiliaryclass exports fallthrough
 +JAVAC_FLAGS += -encoding UTF-8
@@ -370,7 +364,7 @@ new file mode 100644
 index 00000000000..b00c524241c
 --- /dev/null
 +++ b/make/modules/javafx.graphics/Lib.gmk
-@@ -0,0 +1,139 @@
+@@ -0,0 +1,186 @@
 +include CopyFiles.gmk
 +include LibCommon.gmk
 +
