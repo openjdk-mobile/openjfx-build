@@ -188,7 +188,7 @@ index ea7d583fba2..46aff9a0367 100644
 +  AC_SUBST(OPENJFX_MODULES_MAKE)
 +])
 diff --git a/make/autoconf/spec.gmk.template b/make/autoconf/spec.gmk.template
-index 0b336721d65..7d7489e352c 100644
+index b3d58704c50..354752041ef 100644
 --- a/make/autoconf/spec.gmk.template
 +++ b/make/autoconf/spec.gmk.template
 @@ -183,6 +183,15 @@ IMPORT_MODULES_MAN := @IMPORT_MODULES_MAN@
@@ -207,7 +207,15 @@ index 0b336721d65..7d7489e352c 100644
  COPYRIGHT_YEAR := @COPYRIGHT_YEAR@
  HOTSPOT_BUILD_TIME := @HOTSPOT_BUILD_TIME@
  
-@@ -834,6 +843,14 @@ USE_EXTERNAL_LIBPNG := @USE_EXTERNAL_LIBPNG@
+@@ -784,6 +793,7 @@ ZIPEXE := @ZIPEXE@
+ UNZIP := @UNZIP@
+ MT := @MT@
+ RC := @RC@
++FXC := @FXC@
+ DUMPBIN := @DUMPBIN@
+ PATHTOOL := @PATHTOOL@
+ WSLPATH := @WSLPATH@
+@@ -839,6 +849,14 @@ USE_EXTERNAL_LIBPNG := @USE_EXTERNAL_LIBPNG@
  PNG_LIBS := @PNG_LIBS@
  PNG_CFLAGS := @PNG_CFLAGS@
  
@@ -222,8 +230,21 @@ index 0b336721d65..7d7489e352c 100644
  # Misc
  INCLUDE_SA := @INCLUDE_SA@
  INCLUDE_JVMCI := @INCLUDE_JVMCI@
+diff --git a/make/autoconf/toolchain.m4 b/make/autoconf/toolchain.m4
+index f58cf4fb94b..c5d7b050588 100644
+--- a/make/autoconf/toolchain.m4
++++ b/make/autoconf/toolchain.m4
+@@ -717,6 +717,8 @@ AC_DEFUN_ONCE([TOOLCHAIN_DETECT_TOOLCHAIN_EXTRA],
+     UTIL_LOOKUP_TOOLCHAIN_PROGS(MT, mt)
+     # Setup the resource compiler (RC)
+     UTIL_LOOKUP_TOOLCHAIN_PROGS(RC, rc)
++    # Setup the shader compiler (FXC)
++    UTIL_LOOKUP_TOOLCHAIN_PROGS(FXC, fxc)
+     UTIL_LOOKUP_TOOLCHAIN_PROGS(DUMPBIN, dumpbin)
+   fi
+ 
 diff --git a/make/common/Modules.gmk b/make/common/Modules.gmk
-index 3271b889867..a1ead0f6936 100644
+index 3271b889867..b487423c0d8 100644
 --- a/make/common/Modules.gmk
 +++ b/make/common/Modules.gmk
 @@ -102,11 +102,13 @@ MAN_DOCS_SUBDIRS += share/man windows/man
@@ -334,7 +355,7 @@ index 00000000000..82fcc6967bf
 +JAVAC_FLAGS += -encoding UTF-8
 diff --git a/make/modules/javafx.graphics/Java.gmk b/make/modules/javafx.graphics/Java.gmk
 new file mode 100644
-index 00000000000..a892af72d47
+index 00000000000..0d69fabc9c7
 --- /dev/null
 +++ b/make/modules/javafx.graphics/Java.gmk
 @@ -0,0 +1,21 @@
@@ -361,10 +382,10 @@ index 00000000000..a892af72d47
 +TARGETS += $(call CreateHkTargets, $(CLEAN_FILES))
 diff --git a/make/modules/javafx.graphics/Lib.gmk b/make/modules/javafx.graphics/Lib.gmk
 new file mode 100644
-index 00000000000..b00c524241c
+index 00000000000..5b627506eaf
 --- /dev/null
 +++ b/make/modules/javafx.graphics/Lib.gmk
-@@ -0,0 +1,186 @@
+@@ -0,0 +1,177 @@
 +include CopyFiles.gmk
 +include LibCommon.gmk
 +
@@ -387,6 +408,9 @@ index 00000000000..b00c524241c
 +))
 +
 +TARGETS += $(BUILD_LIBPRISM_COMMON)
++
++include lib/DecoraShaders.gmk
++include lib/PrismShaders.gmk
 +
 +ifeq ($(call isTargetOs, linux macosx), true)
 +################################################################################
@@ -416,22 +440,10 @@ index 00000000000..b00c524241c
 +TARGETS += $(BUILD_LIBPRISM_ES2)
 +endif
 +
++################################################################################
++# Create the D3D prism library
 +ifeq ($(call isTargetOs, windows), true)
-+################################################################################
-+## Build libprism_d3d
-+################################################################################
-+
-+$(eval $(call SetupJdkLibrary, BUILD_LIBPRISM_D3D, \
-+    NAME := prism_d3d, \
-+    OPTIMIZATION := HIGH, \
-+    CFLAGS_windows := -EHsc -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR -DINLINE=__inline -DUNICODE -D_UNICODE -permissive -std:c++14, \
-+    CFLAGS_windows += -I$(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/headers/PrismD3D, \
-+    LIBS_windows := -manifest -dynamicbase -nxcompat user32.lib, \
-+    SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-prism-d3d, \
-+    EXTRA_SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-prism-d3d/hlsl, \
-+))
-+
-+TARGETS += $(BUILD_LIBPRISM_D3D)
++  include lib/D3DLibraries.gmk
 +endif
 +
 +################################################################################
@@ -551,6 +563,164 @@ index 00000000000..b00c524241c
 +))
 +
 +TARGETS += $(BUILD_LIBJAVAFXIIO)
+diff --git a/make/modules/javafx.graphics/lib/D3DLibraries.gmk b/make/modules/javafx.graphics/lib/D3DLibraries.gmk
+new file mode 100644
+index 00000000000..bda896a509b
+--- /dev/null
++++ b/make/modules/javafx.graphics/lib/D3DLibraries.gmk
+@@ -0,0 +1,88 @@
++include MakeIncludeStart.gmk
++ifeq ($(INCLUDE), true)
++
++D3D_SHADER_SRC_DIR := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-prism-d3d
++D3D_SHADER_GEN_DIR := $(SUPPORT_OUTPUTDIR)/headers/javafx.graphics/prism_d3d
++
++D3D_SHADER_HEADERS := \
++    $(D3D_SHADER_GEN_DIR)/PassThroughVS.h \
++    $(D3D_SHADER_GEN_DIR)/hlsl/Mtl1VS_Obj.h
++
++$(D3D_SHADER_GEN_DIR)/PassThroughVS.h: $(D3D_SHADER_SRC_DIR)/PassThroughVS.hlsl
++	$(call LogInfo, Compiling passthrough shader $<)
++	$(call MakeDir, $(@D))
++	$(FXC) /nologo /T vs_3_0 /Fh $(@) /E passThrough $<
++
++$(D3D_SHADER_GEN_DIR)/hlsl/Mtl1VS_Obj.h: $(D3D_SHADER_SRC_DIR)/hlsl/Mtl1VS.hlsl
++	$(call LogInfo, Compiling vertex shader $<)
++	$(call MakeDir, $(@D))
++	$(FXC) /nologo /T vs_3_0 /Fh $(@) /DVertexType=VsInput $<
++
++D3D_PIXEL_SHADER_SRC := $(D3D_SHADER_SRC_DIR)/hlsl/Mtl1PS.hlsl
++
++# All pixel shader combinations
++D3D_PIXEL_SPEC_VALUES := 1 2 3
++D3D_PIXEL_STYPE_VALUES := 0 1 2 3
++D3D_PIXEL_STYPE_SUFFIXES := n t c m
++
++# Base pixel shader variants
++D3D_PIXEL_SHADER_VARIANTS := \
++    Mtl1PS|Spec=0|SType=0 \
++    Mtl1PS_i|Spec=0|SType=0|IllumMap=1
++
++# pixel shader variants without bump, without illumination
++$(foreach spec,$(D3D_PIXEL_SPEC_VALUES),\
++  $(foreach stype,$(D3D_PIXEL_STYPE_VALUES),\
++    $(eval D3D_PIXEL_SHADER_VARIANTS += Mtl1PS_s$(spec)$(word $(shell echo $$(($(stype)+1))),$(D3D_PIXEL_STYPE_SUFFIXES))|Spec=$(spec)|SType=$(stype))))
++
++# pixel shader variants with bump, without illumination
++$(foreach spec,$(D3D_PIXEL_SPEC_VALUES),\
++  $(foreach stype,$(D3D_PIXEL_STYPE_VALUES),\
++    $(eval D3D_PIXEL_SHADER_VARIANTS += Mtl1PS_b$(spec)$(word $(shell echo $$(($(stype)+1))),$(D3D_PIXEL_STYPE_SUFFIXES))|Spec=$(spec)|SType=$(stype)|Bump=1)))
++
++# pixel shader variants with illumination, without bump
++$(foreach spec,$(D3D_PIXEL_SPEC_VALUES),\
++  $(foreach stype,$(D3D_PIXEL_STYPE_VALUES),\
++    $(eval D3D_PIXEL_SHADER_VARIANTS += Mtl1PS_s$(spec)$(word $(shell echo $$(($(stype)+1))),$(D3D_PIXEL_STYPE_SUFFIXES))i|Spec=$(spec)|SType=$(stype)|IllumMap=1)))
++
++# pixel shader variants with bump and illumination
++$(foreach spec,$(D3D_PIXEL_SPEC_VALUES),\
++  $(foreach stype,$(D3D_PIXEL_STYPE_VALUES),\
++    $(eval D3D_PIXEL_SHADER_VARIANTS += Mtl1PS_b$(spec)$(word $(shell echo $$(($(stype)+1))),$(D3D_PIXEL_STYPE_SUFFIXES))i|Spec=$(spec)|SType=$(stype)|Bump=1|IllumMap=1)))
++
++# function to create pixel shader rule
++define CreatePixelShaderVariant
++  $(eval _NAME := $(word 1,$(subst |, ,$(1))))
++  $(eval _DEFS := $(subst |, ,$(wordlist 2,99,$(subst |, ,$(1)))))
++  $(eval _FLAGS := $(foreach def,$(_DEFS),/D$(def)))
++
++$(D3D_SHADER_GEN_DIR)/hlsl/$(_NAME).h: $(D3D_PIXEL_SHADER_SRC)
++	$$(call LogInfo, Compiling pixel shader $(_NAME).h)
++	$$(call MakeDir, $$(@D))
++	$$(FXC) /nologo /T ps_3_0 /Fh $$(@) $(_FLAGS) $$<
++
++  D3D_PIXEL_SHADER_HEADERS += $(D3D_SHADER_GEN_DIR)/hlsl/$(_NAME).h
++endef
++
++$(foreach var,$(D3D_PIXEL_SHADER_VARIANTS),$(eval $(call CreatePixelShaderVariant,$(var))))
++
++D3D_SHADER_HEADERS += $(D3D_PIXEL_SHADER_HEADERS)
++
++$(eval $(call SetupJdkLibrary, BUILD_LIBPRISM_D3D, \
++    NAME := prism_d3d, \
++    OPTIMIZATION := HIGH, \
++    EXTRA_HEADER_DIRS := $(D3D_SHADER_GEN_DIR), \
++    CFLAGS_windows := -EHsc -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR -DINLINE=__inline -DUNICODE -D_UNICODE -permissive -std:c++14, \
++    LIBS_windows := -manifest -dynamicbase -nxcompat user32.lib, \
++    SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-prism-d3d, \
++    EXTRA_SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-prism-d3d/hlsl, \
++))
++
++$(BUILD_LIBPRISM_D3D): $(D3D_SHADER_HEADERS)
++
++TARGETS += $(BUILD_LIBPRISM_D3D)
++
++################################################################################
++
++endif # include guard
++include MakeIncludeEnd.gmk
+diff --git a/make/modules/javafx.graphics/lib/DecoraShaders.gmk b/make/modules/javafx.graphics/lib/DecoraShaders.gmk
+new file mode 100644
+index 00000000000..81b26551903
+--- /dev/null
++++ b/make/modules/javafx.graphics/lib/DecoraShaders.gmk
+@@ -0,0 +1,26 @@
++include MakeIncludeStart.gmk
++ifeq ($(INCLUDE), true)
++
++DECORA_SHADER_SRC_DIR := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/gensrc/jsl-decora
++DECORA_SHADER_GEN_DIR := $(SUPPORT_OUTPUTDIR)/gensrc/javafx.graphics
++
++ifeq ($(call isTargetOs, windows), true)
++  HLSL_DECORA_SHADER_SRC_DIR := $(DECORA_SHADER_SRC_DIR)/com/sun/scenario/effect/impl/hw/d3d/hlsl
++  HLSL_DECORA_SHADER_GEN_DIR := $(DECORA_SHADER_GEN_DIR)/com/sun/scenario/effect/impl/hw/d3d/hlsl
++  HLSL_DECORA_SHADER_SOURCES := $(wildcard $(HLSL_DECORA_SHADER_SRC_DIR)/*.hlsl)
++  HLSL_DECORA_SHADER_OBJECTS := $(patsubst $(HLSL_DECORA_SHADER_SRC_DIR)/%.hlsl,$(HLSL_DECORA_SHADER_GEN_DIR)/%.obj,$(HLSL_DECORA_SHADER_SOURCES))
++
++  $(HLSL_DECORA_SHADER_GEN_DIR):
++	$(call MakeDir, $@)
++
++  $(HLSL_DECORA_SHADER_GEN_DIR)/%.obj: $(HLSL_DECORA_SHADER_SRC_DIR)/%.hlsl
++	@echo "Compiling d3d decora shader: $<"
++	$(FXC) /nologo /T ps_3_0 /Fo $@ $<
++
++  $(BUILD_LIBPRISM_COMMON): $(HLSL_DECORA_SHADER_GEN_DIR) $(HLSL_DECORA_SHADER_OBJECTS)
++endif
++
++################################################################################
++
++endif # include guard
++include MakeIncludeEnd.gmk
+diff --git a/make/modules/javafx.graphics/lib/PrismShaders.gmk b/make/modules/javafx.graphics/lib/PrismShaders.gmk
+new file mode 100644
+index 00000000000..9ae6049d3f3
+--- /dev/null
++++ b/make/modules/javafx.graphics/lib/PrismShaders.gmk
+@@ -0,0 +1,26 @@
++include MakeIncludeStart.gmk
++ifeq ($(INCLUDE), true)
++
++PRISM_SHADER_SRC_DIR := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/gensrc/jsl-prism
++PRISM_SHADER_GEN_DIR := $(SUPPORT_OUTPUTDIR)/gensrc/javafx.graphics
++
++ifeq ($(call isTargetOs, windows), true)
++  HLSL_PRISM_SHADER_SRC_DIR := $(PRISM_SHADER_SRC_DIR)/com/sun/prism/d3d/hlsl
++  HLSL_PRISM_SHADER_GEN_DIR := $(PRISM_SHADER_GEN_DIR)/com/sun/prism/d3d/hlsl
++  HLSL_PRISM_SHADER_SOURCES := $(wildcard $(HLSL_PRISM_SHADER_SRC_DIR)/*.hlsl)
++  HLSL_PRISM_SHADER_OBJECTS := $(patsubst $(HLSL_PRISM_SHADER_SRC_DIR)/%.hlsl,$(HLSL_PRISM_SHADER_GEN_DIR)/%.obj,$(HLSL_PRISM_SHADER_SOURCES))
++
++  $(HLSL_PRISM_SHADER_GEN_DIR):
++	$(call MakeDir, $@)
++
++  $(HLSL_PRISM_SHADER_GEN_DIR)/%.obj: $(HLSL_PRISM_SHADER_SRC_DIR)/%.hlsl
++	@echo "Compiling d3d prism shader: $<"
++	$(FXC) /nologo /T ps_3_0 /Fo $@ $<
++
++  $(BUILD_LIBPRISM_COMMON): $(HLSL_PRISM_SHADER_GEN_DIR) $(HLSL_PRISM_SHADER_OBJECTS)
++endif
++
++################################################################################
++
++endif # include guard
++include MakeIncludeEnd.gmk
 diff --git a/make/modules/javafx.media/Java.gmk b/make/modules/javafx.media/Java.gmk
 new file mode 100644
 index 00000000000..4ee4ef7f9d2
