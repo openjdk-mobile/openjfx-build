@@ -29,7 +29,7 @@ index 2e608f893d6..9627f0f120e 100644
  ################################################################################
  #
 diff --git a/make/autoconf/lib-bundled.m4 b/make/autoconf/lib-bundled.m4
-index 3246697663c..75fb2754fc2 100644
+index a6266bec014..573a5e49f34 100644
 --- a/make/autoconf/lib-bundled.m4
 +++ b/make/autoconf/lib-bundled.m4
 @@ -41,6 +41,8 @@ AC_DEFUN_ONCE([LIB_SETUP_BUNDLED_LIBS],
@@ -39,7 +39,7 @@ index 3246697663c..75fb2754fc2 100644
 +  LIB_SETUP_GTK
 +  LIB_SETUP_PANGO
  ])
- 
+
  ################################################################################
 @@ -357,3 +359,89 @@ AC_DEFUN_ONCE([LIB_SETUP_HARFBUZZ],
    AC_SUBST(HARFBUZZ_CFLAGS)
@@ -188,13 +188,13 @@ index ea7d583fba2..46aff9a0367 100644
 +  AC_SUBST(OPENJFX_MODULES_MAKE)
 +])
 diff --git a/make/autoconf/spec.gmk.template b/make/autoconf/spec.gmk.template
-index 0b336721d65..7d7489e352c 100644
+index b3d58704c50..10ea2cc1205 100644
 --- a/make/autoconf/spec.gmk.template
 +++ b/make/autoconf/spec.gmk.template
 @@ -183,6 +183,15 @@ IMPORT_MODULES_MAN := @IMPORT_MODULES_MAN@
  IMPORT_MODULES_SRC := @IMPORT_MODULES_SRC@
  IMPORT_MODULES_MAKE := @IMPORT_MODULES_MAKE@
- 
+
 +OPENJFX_MODULES_CLASSES := @OPENJFX_MODULES_CLASSES@
 +OPENJFX_MODULES_CMDS := @OPENJFX_MODULES_CMDS@
 +OPENJFX_MODULES_LIBS := @OPENJFX_MODULES_LIBS@
@@ -206,11 +206,11 @@ index 0b336721d65..7d7489e352c 100644
 +
  COPYRIGHT_YEAR := @COPYRIGHT_YEAR@
  HOTSPOT_BUILD_TIME := @HOTSPOT_BUILD_TIME@
- 
-@@ -834,6 +843,14 @@ USE_EXTERNAL_LIBPNG := @USE_EXTERNAL_LIBPNG@
+
+@@ -839,6 +848,14 @@ USE_EXTERNAL_LIBPNG := @USE_EXTERNAL_LIBPNG@
  PNG_LIBS := @PNG_LIBS@
  PNG_CFLAGS := @PNG_CFLAGS@
- 
+
 +USE_EXTERNAL_LIBGTK := @USE_EXTERNAL_LIBGTK@
 +GTK_LIBS := @GTK_LIBS@
 +GTK_CFLAGS := @GTK_CFLAGS@
@@ -223,7 +223,7 @@ index 0b336721d65..7d7489e352c 100644
  INCLUDE_SA := @INCLUDE_SA@
  INCLUDE_JVMCI := @INCLUDE_JVMCI@
 diff --git a/make/common/Modules.gmk b/make/common/Modules.gmk
-index 3271b889867..a1ead0f6936 100644
+index 3271b889867..b487423c0d8 100644
 --- a/make/common/Modules.gmk
 +++ b/make/common/Modules.gmk
 @@ -102,11 +102,13 @@ MAN_DOCS_SUBDIRS += share/man windows/man
@@ -238,7 +238,7 @@ index 3271b889867..a1ead0f6936 100644
 -        $(patsubst %,%/$(strip $1)/module-info.java, $(IMPORT_MODULES_SRC))))
 +        $(patsubst %,%/$(strip $1)/module-info.java, $(IMPORT_MODULES_SRC)) \
 +        $(patsubst %,%/modules/$(strip $1)/src/main/java/module-info.java, $(OPENJFX_MODULES_SRC))))
- 
+
  # Find module-info.java files in the specific source dir
  # Param 1 - Src dir to find module-info.java files in
 @@ -124,8 +126,10 @@ FindModuleInfosForSrcDir = \
@@ -251,7 +251,7 @@ index 3271b889867..a1ead0f6936 100644
 +        $(if $(filter $(addsuffix %, $(OPENJFX_MODULES_SRC)), $(mi)), \
 +          $(notdir $(patsubst %/,%, $(dir $(patsubst %/,%, $(dir $(patsubst %/,%, $(dir $(patsubst %/,%, $(dir $(mi)))))))))), \
 +          $(notdir $(patsubst %/,%, $(dir $(patsubst %/,%, $(dir $(patsubst %/,%, $(dir $(mi))))))))))))
- 
+
  # Find all modules by looking for module-info.java files and looking at parent
  # directories.
 @@ -149,7 +153,13 @@ FindImportedModules = \
@@ -266,7 +266,7 @@ index 3271b889867..a1ead0f6936 100644
 +        $(OPENJFX_MODULES_SRC)/modules/$(strip $1)/build/hlsl/Prism \
 +        $(OPENJFX_MODULES_SRC)/modules/$(strip $1)/build/hlsl/Decora \
 +        $(OPENJFX_MODULES_SRC)/modules/$(strip $1)/src/main/resources))
- 
+
  # Find all specs dirs for a particular module
  # $1 - Module to find specs dirs for
 @@ -171,7 +181,12 @@ FindModuleManDirsForDocs = \
@@ -280,12 +280,12 @@ index 3271b889867..a1ead0f6936 100644
 +        $(addsuffix /*/build/hlsl/Prism, $(OPENJFX_MODULES_SRC)/modules) \
 +        $(addsuffix /*/build/hlsl/Decora, $(OPENJFX_MODULES_SRC)/modules) \
 +        $(addsuffix /*/src/main/java, $(OPENJFX_MODULES_SRC)/modules))
- 
+
  ################################################################################
  # Extract module dependencies from module-info.java files, both normal
 diff --git a/make/modules/javafx.base/Gensrc.gmk b/make/modules/javafx.base/Gensrc.gmk
 new file mode 100644
-index 00000000000..5f0d4c95f3b
+index 00000000000..cb82f4ca4f0
 --- /dev/null
 +++ b/make/modules/javafx.base/Gensrc.gmk
 @@ -0,0 +1,14 @@
@@ -295,11 +295,11 @@ index 00000000000..5f0d4c95f3b
 +    SOURCE_FILES := $(OPENJFX_MODULES_SRC)/modules/javafx.base/src/main/version-info/VersionInfo.java, \
 +    OUTPUT_FILE := $(SUPPORT_OUTPUTDIR)/gensrc/javafx.base/com/sun/javafx/runtime/VersionInfo.java, \
 +    REPLACEMENTS := \
-+        @@BUILD_TIMESTAMP@@ => $(BUILD_TIMESTAMP) ; \
-+        @@RELEASE_SUFFIX@@ => $(RELEASE_SUFFIX) ; \
-+        @@RELEASE_VERSION_SHORT@@ => $(RUNTIME_VERSION) ; \
-+        @@VERSION@@ => $(VERSION) ; \
-+        @@RUNTIME_VERSION@@ => $(RUNTIME_VERSION), \
++        @BUILD_TIMESTAMP@ => $(BUILD_TIMESTAMP) ; \
++        @RELEASE_SUFFIX@ => $(RELEASE_SUFFIX) ; \
++        @RELEASE_VERSION_SHORT@ => $(RUNTIME_VERSION) ; \
++        @VERSION@ => $(VERSION) ; \
++        @RUNTIME_VERSION@ => $(RUNTIME_VERSION), \
 +))
 +
 +TARGETS += $(BUILD_VERSION_JAVAFX)
@@ -334,7 +334,7 @@ index 00000000000..82fcc6967bf
 +JAVAC_FLAGS += -encoding UTF-8
 diff --git a/make/modules/javafx.graphics/Java.gmk b/make/modules/javafx.graphics/Java.gmk
 new file mode 100644
-index 00000000000..a892af72d47
+index 00000000000..0d69fabc9c7
 --- /dev/null
 +++ b/make/modules/javafx.graphics/Java.gmk
 @@ -0,0 +1,21 @@
@@ -361,10 +361,10 @@ index 00000000000..a892af72d47
 +TARGETS += $(call CreateHkTargets, $(CLEAN_FILES))
 diff --git a/make/modules/javafx.graphics/Lib.gmk b/make/modules/javafx.graphics/Lib.gmk
 new file mode 100644
-index 00000000000..b00c524241c
+index 00000000000..60e79743506
 --- /dev/null
 +++ b/make/modules/javafx.graphics/Lib.gmk
-@@ -0,0 +1,186 @@
+@@ -0,0 +1,198 @@
 +include CopyFiles.gmk
 +include LibCommon.gmk
 +
@@ -388,7 +388,7 @@ index 00000000000..b00c524241c
 +
 +TARGETS += $(BUILD_LIBPRISM_COMMON)
 +
-+ifeq ($(call isTargetOs, linux macosx), true)
++ifeq ($(call isTargetOs, linux macosx ios), true)
 +################################################################################
 +## Build libprism_es2
 +################################################################################
@@ -400,16 +400,21 @@ index 00000000000..b00c524241c
 +ifeq ($(call isTargetOs, macosx), true)
 +   PLATFORM_SRC := $(SRC_SHARE_PRISM_ES2)/macosx
 +endif
++ifeq ($(call isTargetOs, ios), true)
++   PLATFORM_SRC := $(SRC_SHARE_PRISM_ES2)/ios
++endif
 +$(eval $(call SetupJdkLibrary, BUILD_LIBPRISM_ES2, \
 +    NAME := prism_es2, \
 +    OPTIMIZATION := HIGH, \
 +    LIBS_linux := -lX11 -lXxf86vm -lGL, \
 +    LIBS_macosx := -framework AppKit -framework ApplicationServices -framework Carbon -framework OpenGL -framework QuartzCore -framework Security, \
++    LIBS_ios := -framework AppKit -framework ApplicationServices -framework Carbon -framework OpenGL -framework QuartzCore -framework Security, \
 +    SRC := $(PLATFORM_SRC), \
 +    EXTRA_FILES := $(SRC_SHARE_PRISM_ES2)/GLContext.c, \
 +    EXTRA_FILES += $(SRC_SHARE_PRISM_ES2)/GLFactory.c, \
 +    EXTRA_FILES += $(SRC_SHARE_PRISM_ES2)/GLPixelFormat.c, \
 +    CFLAGS_macosx := -I$(SRC_SHARE_PRISM_ES2), \
++    CFLAGS_ios := -I$(SRC_SHARE_PRISM_ES2), \
 +    CFLAGS := -Wno-error, \
 +))
 +
@@ -448,13 +453,16 @@ index 00000000000..b00c524241c
 +ifeq ($(call isTargetOs, windows), true)
 +   PLATFORM_GLASS_SRC := $(SRC_SHARE_GLASS)/win
 +endif
-+
++ifeq ($(call isTargetOs, ios), true)
++   PLATFORM_GLASS_SRC := $(SRC_SHARE_GLASS)/ios
++endif
 +$(eval $(call SetupJdkLibrary, BUILD_LIBGLASS, \
 +    NAME := glass, \
 +    OPTIMIZATION := HIGH, \
 +    SRC := $(PLATFORM_GLASS_SRC), \
 +    LIBS_linux := -lX11, \
 +    LIBS_macosx := -framework AppKit -framework ApplicationServices -framework Metal -framework Carbon -framework OpenGL -framework QuartzCore -framework Security -framework Network, \
++    LIBS_ios := -framework AppKit -framework ApplicationServices -framework Metal -framework Carbon -framework OpenGL -framework QuartzCore -framework Security -framework Network, \
 +    LIBS_windows := -manifest -dynamicbase -nxcompat delayimp.lib gdi32.lib urlmon.lib Comdlg32.lib winmm.lib imm32.lib shell32.lib Uiautomationcore.lib dwmapi.lib version.lib /DELAYLOAD:user32.dll /DELAYLOAD:urlmon.dll /DELAYLOAD:winmm.dll /DELAYLOAD:shell32.dll /DELAYLOAD:Uiautomationcore.dll /DELAYLOAD:dwmapi.dll /DELAYLOAD:version.dll, \
 +    EXTRA_FILES := $(EXTRA_GLASS_SRC), \
 +    CFLAGS_macosx := -DMACOS_MIN_VERSION_MAJOR=11 -DMACOS_MIN_VERSION_MINOR=0, \
@@ -540,11 +548,15 @@ index 00000000000..b00c524241c
 +## Build libjavafx_iio
 +################################################################################
 +
++ifeq ($(call isTargetOs, ios), true)
++   PLATFORM_IIO_SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-iio/ios
++endif
 +$(eval $(call SetupJdkLibrary, BUILD_LIBJAVAFXIIO, \
 +    NAME := javafx_iio, \
 +    LINK_TYPE := C++, \
 +    OPTIMIZATION := HIGH, \
 +    SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-iio/libjpeg, \
++    EXTRA_SRC := $(PLATFORM_IIO_SRC), \
 +    EXTRA_FILES := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-iio/jpegloader.c, \
 +    LIBS_windows := -manifest -dynamicbase -nxcompat, \
 +    CFLAGS_windows := -EHsc -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR -DINLINE=__inline -permissive, \
