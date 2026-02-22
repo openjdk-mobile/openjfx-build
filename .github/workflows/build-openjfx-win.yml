@@ -27,13 +27,11 @@ jobs:
           git clone https://github.com/openjdk/mobile.git
           cd mobile
           patch -p1 < $GITHUB_WORKSPACE/openjdk-ext/src/jfx.patch
-      - name: Clone OpenJFX
+          cp -r $GITHUB_WORKSPACE/openjdk-ext/src/make/data/javafx-tools make/data
+      - name: Clone OpenJFX and build OpenJDK Mobile with OpenJFX
         shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
         run: |
           git clone https://github.com/openjdk/jfx.git
-          cd jfx
-          sh gradlew shadersClasses processShaders generateD3DHeaders
-          cd ..
           cd mobile
           sh configure --with-conf-name=jfx --with-openjfx-modules=../jfx --disable-warnings-as-errors
           cd build/jfx

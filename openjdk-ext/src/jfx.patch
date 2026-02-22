@@ -1,6 +1,6 @@
 diff --git a/README_OpenJFX.md b/README_OpenJFX.md
 new file mode 100644
-index 00000000000..412f2115e37
+index 00000000000..1c1df60e150
 --- /dev/null
 +++ b/README_OpenJFX.md
 @@ -0,0 +1,12 @@
@@ -10,7 +10,7 @@ index 00000000000..412f2115e37
 +
 +- configure: `configure --with-conf-name=jfx0326 --with-openjfx-modules=/path/to/openjfx --disable-warnings-as-errors`
 +
-+- build: 
++- build:
 +-- `cd build/jfx0326`
 +-- `make jdk`
 +
@@ -21,11 +21,11 @@ index 2e608f893d6..9627f0f120e 100644
 --- a/make/autoconf/configure.ac
 +++ b/make/autoconf/configure.ac
 @@ -166,6 +166,7 @@ JDKOPT_SETUP_JDK_OPTIONS
- 
+
  SRCDIRS_SETUP_DIRS
  SRCDIRS_SETUP_IMPORT_MODULES
 +SRCDIRS_SETUP_OPENJFX_MODULES
- 
+
  ################################################################################
  #
 diff --git a/make/autoconf/lib-bundled.m4 b/make/autoconf/lib-bundled.m4
@@ -188,7 +188,7 @@ index ea7d583fba2..46aff9a0367 100644
 +  AC_SUBST(OPENJFX_MODULES_MAKE)
 +])
 diff --git a/make/autoconf/spec.gmk.template b/make/autoconf/spec.gmk.template
-index b3d58704c50..10ea2cc1205 100644
+index b3d58704c50..354752041ef 100644
 --- a/make/autoconf/spec.gmk.template
 +++ b/make/autoconf/spec.gmk.template
 @@ -183,6 +183,15 @@ IMPORT_MODULES_MAN := @IMPORT_MODULES_MAN@
@@ -207,7 +207,15 @@ index b3d58704c50..10ea2cc1205 100644
  COPYRIGHT_YEAR := @COPYRIGHT_YEAR@
  HOTSPOT_BUILD_TIME := @HOTSPOT_BUILD_TIME@
 
-@@ -839,6 +848,14 @@ USE_EXTERNAL_LIBPNG := @USE_EXTERNAL_LIBPNG@
+@@ -784,6 +793,7 @@ ZIPEXE := @ZIPEXE@
+ UNZIP := @UNZIP@
+ MT := @MT@
+ RC := @RC@
++FXC := @FXC@
+ DUMPBIN := @DUMPBIN@
+ PATHTOOL := @PATHTOOL@
+ WSLPATH := @WSLPATH@
+@@ -839,6 +849,14 @@ USE_EXTERNAL_LIBPNG := @USE_EXTERNAL_LIBPNG@
  PNG_LIBS := @PNG_LIBS@
  PNG_CFLAGS := @PNG_CFLAGS@
 
@@ -222,6 +230,19 @@ index b3d58704c50..10ea2cc1205 100644
  # Misc
  INCLUDE_SA := @INCLUDE_SA@
  INCLUDE_JVMCI := @INCLUDE_JVMCI@
+diff --git a/make/autoconf/toolchain.m4 b/make/autoconf/toolchain.m4
+index f58cf4fb94b..c5d7b050588 100644
+--- a/make/autoconf/toolchain.m4
++++ b/make/autoconf/toolchain.m4
+@@ -717,6 +717,8 @@ AC_DEFUN_ONCE([TOOLCHAIN_DETECT_TOOLCHAIN_EXTRA],
+     UTIL_LOOKUP_TOOLCHAIN_PROGS(MT, mt)
+     # Setup the resource compiler (RC)
+     UTIL_LOOKUP_TOOLCHAIN_PROGS(RC, rc)
++    # Setup the shader compiler (FXC)
++    UTIL_LOOKUP_TOOLCHAIN_PROGS(FXC, fxc)
+     UTIL_LOOKUP_TOOLCHAIN_PROGS(DUMPBIN, dumpbin)
+   fi
+
 diff --git a/make/common/Modules.gmk b/make/common/Modules.gmk
 index 3271b889867..b487423c0d8 100644
 --- a/make/common/Modules.gmk
@@ -332,28 +353,456 @@ index 00000000000..82fcc6967bf
 +DISABLED_WARNINGS_java := try deprecation rawtypes unchecked serial cast removal preview restricted dangling-doc-comments overloads module this-escape \
 +                          lossy-conversions static auxiliaryclass exports fallthrough varargs
 +JAVAC_FLAGS += -encoding UTF-8
+diff --git a/make/modules/javafx.graphics/Gensrc.gmk b/make/modules/javafx.graphics/Gensrc.gmk
+new file mode 100644
+index 00000000000..f04fb6439fe
+--- /dev/null
++++ b/make/modules/javafx.graphics/Gensrc.gmk
+@@ -0,0 +1,420 @@
++include GensrcCommon.gmk
++include Execute.gmk
++
++################################################################################
++# JavaFX Graphics Shader Generation
++#
++# Strategy: Compile core classes first (in temp location), then use them
++# to compile shader compilers and generate shaders - all in one pass!
++################################################################################
++
++# Configure path separator for cross-platform support
++# NOTE: Always use colon - fixpath will convert to semicolon on Windows if needed
++PATH_SEP := :
++
++GRAPHICS_MODULE_SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics
++
++# Core classes temp directories (for shader compiler compilation)
++BASE_CORE_TEMP_DIR := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/temp-modules/javafx.base
++GRAPHICS_CORE_TEMP_DIR := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/temp-modules/javafx.graphics
++
++# Module paths (final location after main java compilation)
++BASE_MODULE_CLASSES := $(JDK_OUTPUTDIR)/modules/javafx.base
++GRAPHICS_MODULE_CLASSES := $(JDK_OUTPUTDIR)/modules/javafx.graphics
++
++################################################################################
++# Step 0: Compile javafx.base and javafx.graphics core classes to temp location
++################################################################################
++
++# First, generate VersionInfo.java for javafx.base
++BASE_VERSION_INFO_SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.base/src/main/version-info/VersionInfo.java
++BASE_VERSION_INFO_GENSRC := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/base-gensrc/java/com/sun/javafx/runtime/VersionInfo.java
++
++$(BASE_VERSION_INFO_GENSRC): $(BASE_VERSION_INFO_SRC)
++	$(call MakeDir, $(@D))
++	$(CP) $< $@
++
++# Compile javafx.base core classes
++$(eval $(call SetupJavaCompilation, BUILD_BASE_CORE_TEMP, \
++    SMALL_JAVA := false, \
++    SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.base/src/main/java, \
++    EXTRA_FILES := $(BASE_VERSION_INFO_GENSRC), \
++    BIN := $(BASE_CORE_TEMP_DIR), \
++    JAVAC_FLAGS := -source $(OLDEST_BOOT_JDK_VERSION) -target $(OLDEST_BOOT_JDK_VERSION), \
++    DISABLED_WARNINGS := rawtypes unchecked deprecation removal preview missing-explicit-ctor serial overloads module this-escape options, \
++    DEPENDS := $(BASE_VERSION_INFO_GENSRC), \
++))
++
++# Compile javafx.graphics core classes using module-source-path and module-path to javafx.base
++$(eval $(call SetupJavaCompilation, BUILD_GRAPHICS_CORE_TEMP, \
++    SMALL_JAVA := false, \
++    SRC := $(GRAPHICS_MODULE_SRC)/src/main/java, \
++    BIN := $(GRAPHICS_CORE_TEMP_DIR), \
++    JAVAC_FLAGS := -source $(OLDEST_BOOT_JDK_VERSION) -target $(OLDEST_BOOT_JDK_VERSION) --module-path $(BASE_CORE_TEMP_DIR) --add-modules=javafx.base, \
++    DISABLED_WARNINGS := rawtypes unchecked deprecation removal preview missing-explicit-ctor serial overloads module this-escape lossy-conversions auxiliaryclass dangling-doc-comments static restricted exports fallthrough options, \
++    DEPENDS := $(BUILD_BASE_CORE_TEMP), \
++))
++
++# Build directories
++JSLC_CLASSES_DIR := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/classes/java/jslc
++DECORA_COMPILER_CLASSES_DIR := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/classes/jsl-compilers/decora
++PRISM_COMPILER_CLASSES_DIR := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/classes/jsl-compilers/prism
++# Generate shaders to temp location first
++JSL_DECORA_TEMP_DIR := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/jsl-decora-temp
++JSL_PRISM_TEMP_DIR := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/jsl-prism-temp
++# Final gensrc output (flattened)
++JSL_DECORA_GENSRC_DIR := $(SUPPORT_OUTPUTDIR)/gensrc/javafx.graphics
++JSL_PRISM_GENSRC_DIR := $(SUPPORT_OUTPUTDIR)/gensrc/javafx.graphics
++ANTLR_GENSRC_DIR := $(SUPPORT_OUTPUTDIR)/gensrc/javafx.graphics/antlr
++MTL_HEADERS_DIR := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/mtl-headers
++MSL_BUILD_DIR := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/msl
++MSL_DECORA_DIR := $(MSL_BUILD_DIR)/Decora
++MSL_PRISM_DIR := $(MSL_BUILD_DIR)/Prism
++HLSL_DECORA_DIR := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/hlsl/Decora
++HLSL_PRISM_DIR := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/hlsl/Prism
++
++# ANTLR configuration
++ANTLR_VERSION := 4.13.2
++ANTLR_JAR := $(TOPDIR)/make/data/javafx-tools/antlr-$(ANTLR_VERSION)-complete.jar
++
++################################################################################
++# Step 1: Generate ANTLR parser from JSL grammar
++################################################################################
++
++JSL_GRAMMAR := $(GRAPHICS_MODULE_SRC)/src/jslc/antlr/com/sun/scenario/effect/compiler/JSL.g4
++ANTLR_OUTPUT_MARKER := $(ANTLR_GENSRC_DIR)/_antlr.marker
++
++$(shell $(MKDIR) -p $(ANTLR_GENSRC_DIR))
++
++$(ANTLR_OUTPUT_MARKER): $(JSL_GRAMMAR) $(ANTLR_JAR)
++	$(call LogInfo, Generating JSL parser with ANTLR)
++	$(call MakeTargetDir)
++	$(JAVA) -cp $(ANTLR_JAR) org.antlr.v4.Tool \
++	    -o $(ANTLR_GENSRC_DIR) \
++	    -package com.sun.scenario.effect.compiler \
++	    -visitor $<
++	$(TOUCH) $@
++
++ANTLR_GENERATED_FILES := \
++    $(ANTLR_GENSRC_DIR)/JSLBaseListener.java \
++    $(ANTLR_GENSRC_DIR)/JSLBaseVisitor.java \
++    $(ANTLR_GENSRC_DIR)/JSLLexer.java \
++    $(ANTLR_GENSRC_DIR)/JSLListener.java \
++    $(ANTLR_GENSRC_DIR)/JSLParser.java \
++    $(ANTLR_GENSRC_DIR)/JSLVisitor.java
++
++$(ANTLR_GENERATED_FILES): $(ANTLR_OUTPUT_MARKER)
++
++################################################################################
++# Step 2: Compile JSLC compiler
++################################################################################
++
++JSLC_SRC_DIR := $(GRAPHICS_MODULE_SRC)/src/jslc/java
++
++$(eval $(call SetupJavaCompilation, BUILD_JSLC_COMPILER, \
++    SMALL_JAVA := false, \
++    SRC := $(JSLC_SRC_DIR), \
++    EXTRA_FILES := $(ANTLR_GENERATED_FILES), \
++    BIN := $(JSLC_CLASSES_DIR), \
++    CLASSPATH := $(ANTLR_JAR), \
++    JAVAC_FLAGS := -source $(OLDEST_BOOT_JDK_VERSION) -target $(OLDEST_BOOT_JDK_VERSION), \
++    DISABLED_WARNINGS := rawtypes unchecked deprecation removal this-escape options, \
++))
++
++$(JSLC_CLASSES_DIR)/_the.BUILD_JSLC_COMPILER_batch: $(ANTLR_GENERATED_FILES)
++$(JSLC_CLASSES_DIR)/_the.BUILD_JSLC_COMPILER_batch.filelist: $(ANTLR_GENERATED_FILES)
++
++################################################################################
++# Step 3: Compile Decora shader compilers
++################################################################################
++
++DECORA_COMPILER_SRC_DIR := $(GRAPHICS_MODULE_SRC)/src/main/jsl-decora
++
++$(eval $(call SetupJavaCompilation, BUILD_DECORA_COMPILERS, \
++    SMALL_JAVA := false, \
++    SRC := $(DECORA_COMPILER_SRC_DIR), \
++    BIN := $(DECORA_COMPILER_CLASSES_DIR), \
++    CLASSPATH := $(JSLC_CLASSES_DIR)$(PATH_SEP)$(ANTLR_JAR)$(PATH_SEP)$(GRAPHICS_CORE_TEMP_DIR)$(PATH_SEP)$(BASE_CORE_TEMP_DIR), \
++    JAVAC_FLAGS := -source $(OLDEST_BOOT_JDK_VERSION) -target $(OLDEST_BOOT_JDK_VERSION), \
++    DISABLED_WARNINGS := rawtypes unchecked deprecation removal options, \
++    DEPENDS := $(BUILD_JSLC_COMPILER) $(BUILD_GRAPHICS_CORE_TEMP), \
++))
++
++$(DECORA_COMPILER_CLASSES_DIR)/_the.BUILD_DECORA_COMPILERS_batch: $(BUILD_JSLC_COMPILER)
++
++################################################################################
++# Step 4: Generate Decora shaders
++################################################################################
++
++DECORA_SHADER_MARKER := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/.decora_shaders.marker
++
++# Set pipeline options based on target OS
++DECORA_PIPELINE_OPTS :=
++ifeq ($(call isTargetOs, windows), true)
++  DECORA_PIPELINE_OPTS := -d3d
++else ifeq ($(call isTargetOs, macosx), true)
++  DECORA_PIPELINE_OPTS := -mtl -es2
++else ifeq ($(call isTargetOs, linux), true)
++  DECORA_PIPELINE_OPTS := -es2
++endif
++
++# Build classpath for Decora shader generation
++DECORA_JAVA_CP := $(ANTLR_JAR)$(PATH_SEP)$(JSLC_CLASSES_DIR)$(PATH_SEP)$(GRAPHICS_MODULE_SRC)/src/jslc/resources$(PATH_SEP)$(DECORA_COMPILER_CLASSES_DIR)$(PATH_SEP)$(DECORA_COMPILER_SRC_DIR)
++DECORA_MODULE_PATH := $(BASE_CORE_TEMP_DIR)$(PATH_SEP)$(GRAPHICS_CORE_TEMP_DIR)
++
++$(DECORA_SHADER_MARKER): $(BUILD_DECORA_COMPILERS)
++	$(call LogInfo, Generating Decora shaders)
++	$(call MakeDir, $(JSL_DECORA_TEMP_DIR))
++ifeq ($(call isTargetOs, macosx), true)
++	$(call MakeDir, $(MTL_HEADERS_DIR))
++endif
++	$(JAVA) --module-path $(DECORA_MODULE_PATH) \
++	    --add-modules=javafx.base,javafx.graphics \
++	    --add-exports=javafx.graphics/com.sun.scenario.effect=ALL-UNNAMED \
++	    --add-exports=javafx.graphics/com.sun.scenario.effect.light=ALL-UNNAMED \
++	    --add-exports=javafx.graphics/com.sun.scenario.effect.impl.state=ALL-UNNAMED \
++	    -cp $(DECORA_JAVA_CP) \
++	    -Dfile.encoding=UTF-8 \
++	    GenAllDecoraShaders -i $(DECORA_COMPILER_SRC_DIR) -o $(JSL_DECORA_TEMP_DIR) \
++	    -t -pkg com/sun/scenario/effect $(DECORA_PIPELINE_OPTS) -all GenAllDecoraShaders
++	$(TOUCH) $@
++
++################################################################################
++# Step 5: Flatten shader directory structure
++################################################################################
++
++# The shader generators create files in jsl-prism/ and jsl-decora/ subdirectories.
++# We copy them to the main gensrc directory to avoid having jsl-* dirs in the module.
++# We DON'T delete the jsl-* dirs so incremental builds work - Java.gmk excludes them.
++SHADER_FLATTEN_MARKER := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/.shaders_flattened
++
++# Pre-declare HLSL markers so they are defined when referenced in flatten prerequisites below
++HLSL_DECORA_MARKER :=
++HLSL_PRISM_MARKER :=
++ifeq ($(call isTargetOs, windows), true)
++  HLSL_DECORA_MARKER := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/.decora_hlsl.marker
++  HLSL_PRISM_MARKER  := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/.prism_hlsl.marker
++endif
++
++ifeq ($(call isTargetOs, windows), true)
++$(SHADER_FLATTEN_MARKER): $(DECORA_SHADER_MARKER) $(HLSL_DECORA_MARKER)
++else
++$(SHADER_FLATTEN_MARKER): $(DECORA_SHADER_MARKER)
++endif
++	$(call LogInfo, Copying Decora shaders to gensrc output)
++	$(CP) -R $(JSL_DECORA_TEMP_DIR)/com $(JSL_DECORA_GENSRC_DIR)/
++	$(TOUCH) $@
++
++################################################################################
++# Step 5a: Compile Decora Metal shaders (macOS only)
++################################################################################
++
++ifeq ($(call isTargetOs, macosx), true)
++  DECORA_MSL_MARKER := $(MSL_DECORA_DIR)/_decora_msl.marker
++
++  $(DECORA_MSL_MARKER): $(SHADER_FLATTEN_MARKER)
++	$(call LogInfo, Compiling Decora Metal shaders)
++	$(call MakeDir, $(MSL_DECORA_DIR))
++	for FILE in $(JSL_DECORA_TEMP_DIR)/com/sun/scenario/effect/impl/hw/mtl/msl/*.metal; do \
++	  if [ -f "$$FILE" ]; then \
++	    BASE=$$(basename "$$FILE" .metal); \
++	    xcrun -sdk macosx metal -Wdeprecated -std=macos-metal2.4 -I $(MTL_HEADERS_DIR) -c "$$FILE" -o "$(MSL_DECORA_DIR)/$$BASE.air"; \
++	  fi; \
++	done
++	$(TOUCH) $@
++endif
++
++################################################################################
++# Step 5b: Compile Decora HLSL shaders (Windows only)
++################################################################################
++
++ifeq ($(call isTargetOs, windows), true)
++  HLSL_DECORA_DIR_OUT := $(JSL_DECORA_TEMP_DIR)/com/sun/scenario/effect/impl/hw/d3d/hlsl
++
++  # Use a recipe-level loop (same as Metal shaders) to avoid parse-time wildcard issues
++  $(HLSL_DECORA_MARKER): $(DECORA_SHADER_MARKER)
++	$(call LogInfo, Compiling Decora HLSL shaders)
++	$(call MakeDir, $(HLSL_DECORA_DIR_OUT))
++	for FILE in $(HLSL_DECORA_DIR_OUT)/*.hlsl; do \
++	  if [ -f "$$FILE" ]; then \
++	    BASE=$$(basename "$$FILE" .hlsl); \
++	    $(FXC) /nologo /T ps_3_0 /Fo "$(HLSL_DECORA_DIR_OUT)/$$BASE.obj" "$$FILE"; \
++	  fi; \
++	done
++	$(TOUCH) $@
++endif
++
++################################################################################
++# Step 6: Compile Prism shader compilers
++################################################################################
++
++PRISM_COMPILER_SRC_DIR := $(GRAPHICS_MODULE_SRC)/src/main/jsl-prism
++
++$(eval $(call SetupJavaCompilation, BUILD_PRISM_COMPILERS, \
++    SMALL_JAVA := false, \
++    SRC := $(PRISM_COMPILER_SRC_DIR), \
++    BIN := $(PRISM_COMPILER_CLASSES_DIR), \
++    CLASSPATH := $(JSLC_CLASSES_DIR)$(PATH_SEP)$(ANTLR_JAR)$(PATH_SEP)$(GRAPHICS_CORE_TEMP_DIR)$(PATH_SEP)$(BASE_CORE_TEMP_DIR), \
++    JAVAC_FLAGS := -source $(OLDEST_BOOT_JDK_VERSION) -target $(OLDEST_BOOT_JDK_VERSION), \
++    DISABLED_WARNINGS := rawtypes unchecked deprecation removal options, \
++    DEPENDS := $(BUILD_JSLC_COMPILER) $(BUILD_GRAPHICS_CORE_TEMP), \
++))
++
++$(PRISM_COMPILER_CLASSES_DIR)/_the.BUILD_PRISM_COMPILERS_batch: $(BUILD_JSLC_COMPILER)
++
++################################################################################
++# Step 7: Generate Prism shaders from JSL files
++################################################################################
++
++PRISM_JSL_FILES := $(wildcard $(PRISM_COMPILER_SRC_DIR)/*.jsl)
++PRISM_SHADER_MARKER := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/.prism_shaders.marker
++
++# Set pipeline options based on target OS
++PRISM_PIPELINE_OPTS :=
++ifeq ($(call isTargetOs, windows), true)
++  PRISM_PIPELINE_OPTS := -d3d
++else ifeq ($(call isTargetOs, macosx), true)
++  PRISM_PIPELINE_OPTS := -mtl -es2
++else ifeq ($(call isTargetOs, linux), true)
++  PRISM_PIPELINE_OPTS := -es2
++endif
++
++# Build classpath for Prism shader generation
++PRISM_JAVA_CP := $(ANTLR_JAR)$(PATH_SEP)$(JSLC_CLASSES_DIR)$(PATH_SEP)$(GRAPHICS_MODULE_SRC)/src/jslc/resources$(PATH_SEP)$(PRISM_COMPILER_CLASSES_DIR)$(PATH_SEP)$(PRISM_COMPILER_SRC_DIR)
++PRISM_MODULE_PATH := $(BASE_CORE_TEMP_DIR)$(PATH_SEP)$(GRAPHICS_CORE_TEMP_DIR)
++
++# Use single target with for loop to serialize execution (prevents PrismShaderCommon.h corruption)
++$(PRISM_SHADER_MARKER): $(BUILD_PRISM_COMPILERS)
++	$(call LogInfo, Generating Prism shaders)
++	$(call MakeDir, $(JSL_PRISM_TEMP_DIR))
++ifeq ($(call isTargetOs, macosx), true)
++	$(call MakeDir, $(MTL_HEADERS_DIR))
++endif
++	@for FILE in $(PRISM_JSL_FILES); do \
++	  $(JAVA) --module-path $(PRISM_MODULE_PATH) \
++	      --add-modules=javafx.base,javafx.graphics \
++	      --add-exports=javafx.graphics/com.sun.scenario.effect=ALL-UNNAMED \
++	      --add-exports=javafx.graphics/com.sun.scenario.effect.light=ALL-UNNAMED \
++	      --add-exports=javafx.graphics/com.sun.scenario.effect.impl.state=ALL-UNNAMED \
++	      -cp $(PRISM_JAVA_CP) \
++	      -Dfile.encoding=UTF-8 \
++	      CompileJSL -i $(PRISM_COMPILER_SRC_DIR) -o $(JSL_PRISM_TEMP_DIR) \
++	      -t -pkg com/sun/prism $(PRISM_PIPELINE_OPTS) -name $$FILE; \
++	done
++	$(TOUCH) $@
++
++PRISM_FLATTEN_MARKER := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/.prism_flattened
++
++ifeq ($(call isTargetOs, windows), true)
++$(PRISM_FLATTEN_MARKER): $(PRISM_SHADER_MARKER) $(HLSL_PRISM_MARKER)
++else
++$(PRISM_FLATTEN_MARKER): $(PRISM_SHADER_MARKER)
++endif
++	$(call LogInfo, Copying Prism shaders to gensrc output)
++	$(CP) -R $(JSL_PRISM_TEMP_DIR)/com $(JSL_PRISM_GENSRC_DIR)/
++	$(TOUCH) $@
++
++################################################################################
++# Step 8a: Compile Prism Metal shaders (macOS only)
++################################################################################
++
++ifeq ($(call isTargetOs, macosx), true)
++  PRISM_MSL_MARKER := $(MSL_PRISM_DIR)/_prism_msl.marker
++
++  $(PRISM_MSL_MARKER): $(PRISM_FLATTEN_MARKER)
++	$(call LogInfo, Compiling Prism Metal shaders)
++	$(call MakeDir, $(MSL_PRISM_DIR))
++	for FILE in $(JSL_PRISM_TEMP_DIR)/com/sun/prism/mtl/msl/*.metal; do \
++	  if [ -f "$$FILE" ]; then \
++	    BASE=$$(basename "$$FILE" .metal); \
++	    xcrun -sdk macosx metal -Wdeprecated -std=macos-metal2.4 -I $(MTL_HEADERS_DIR) -c "$$FILE" -o "$(MSL_PRISM_DIR)/$$BASE.air"; \
++	  fi; \
++	done
++	$(TOUCH) $@
++endif
++
++################################################################################
++# Step 8b: Compile Prism HLSL shaders (Windows only)
++################################################################################
++
++ifeq ($(call isTargetOs, windows), true)
++  HLSL_PRISM_DIR_OUT := $(JSL_PRISM_TEMP_DIR)/com/sun/prism/d3d/hlsl
++
++  # Use a recipe-level loop (same as Metal shaders) to avoid parse-time wildcard issues
++  $(HLSL_PRISM_MARKER): $(PRISM_SHADER_MARKER)
++	$(call LogInfo, Compiling Prism HLSL shaders)
++	$(call MakeDir, $(HLSL_PRISM_DIR_OUT))
++	for FILE in $(HLSL_PRISM_DIR_OUT)/*.hlsl; do \
++	  if [ -f "$$FILE" ]; then \
++	    BASE=$$(basename "$$FILE" .hlsl); \
++	    $(FXC) /nologo /T ps_3_0 /Fo "$(HLSL_PRISM_DIR_OUT)/$$BASE.obj" "$$FILE"; \
++	  fi; \
++	done
++	$(TOUCH) $@
++endif
++
++################################################################################
++# Step 9: Compile and link native Metal shaders (macOS only)
++################################################################################
++
++ifeq ($(call isTargetOs, macosx), true)
++  NATIVE_METAL_SRC_DIR := $(GRAPHICS_MODULE_SRC)/src/main/native-prism-mtl/msl
++  NATIVE_MSL_MARKER := $(MSL_BUILD_DIR)/_native_msl.marker
++
++  $(NATIVE_MSL_MARKER):
++	$(call LogInfo, Compiling native Metal shaders)
++	$(call MakeDir, $(MSL_BUILD_DIR))
++	for FILE in $(NATIVE_METAL_SRC_DIR)/*.metal; do \
++	  if [ -f "$$FILE" ]; then \
++	    BASE=$$(basename "$$FILE" .metal); \
++	    xcrun -sdk macosx metal -std=macos-metal2.4 -c "$$FILE" -o "$(MSL_BUILD_DIR)/$$BASE.air"; \
++	  fi; \
++	done
++	$(TOUCH) $@
++
++  METAL_LIB_OUTPUT := $(MSL_BUILD_DIR)/com/sun/prism/mtl/msl/jfxshaders.metallib
++
++  $(METAL_LIB_OUTPUT): $(DECORA_MSL_MARKER) $(PRISM_MSL_MARKER) $(NATIVE_MSL_MARKER)
++	$(call LogInfo, Linking Metal shader library)
++	$(call MakeDir, $(@D))
++	xcrun -sdk macosx metallib $$(find $(MSL_BUILD_DIR) -name "*.air") -o $@
++endif
++
++################################################################################
++# Step 10: Copy metallib to final location
++################################################################################
++
++ifeq ($(call isTargetOs, macosx), true)
++  # Copy metallib to the proper package location in gensrc output
++  METALLIB_GENSRC_OUTPUT := $(JSL_DECORA_GENSRC_DIR)/com/sun/prism/mtl/msl/jfxshaders.metallib
++
++  $(METALLIB_GENSRC_OUTPUT): $(METAL_LIB_OUTPUT)
++	$(call LogInfo, Copying Metal library to gensrc output)
++	$(call MakeDir, $(@D))
++	$(CP) $(METAL_LIB_OUTPUT) $@
++endif
++
++################################################################################
++# Collect all targets
++################################################################################
++
++ifeq ($(call isTargetOs, macosx), true)
++  # Create a marker file that indicates all headers are ready
++  # This allows build of libprism_mtl in Lib.gmk to depend on headers being generated
++  MTL_HEADERS_READY_MARKER := $(MTL_HEADERS_DIR)/.headers_ready
++
++  # On macOS, headers marker depends on Decora MSL compilation (which creates DecoraShaderCommon.h)
++  $(MTL_HEADERS_READY_MARKER): $(SHADER_FLATTEN_MARKER) $(PRISM_FLATTEN_MARKER) $(DECORA_MSL_MARKER)
++	$(TOUCH) $@
++endif
++
++TARGETS := $(SHADER_FLATTEN_MARKER) $(PRISM_FLATTEN_MARKER) $(MTL_HEADERS_READY_MARKER)
++
++ifeq ($(call isTargetOs, macosx), true)
++  TARGETS += $(METALLIB_GENSRC_OUTPUT)
++endif
++
++ifeq ($(call isTargetOs, windows), true)
++  TARGETS += $(HLSL_DECORA_MARKER) $(HLSL_PRISM_MARKER)
++endif
++
 diff --git a/make/modules/javafx.graphics/Java.gmk b/make/modules/javafx.graphics/Java.gmk
 new file mode 100644
-index 00000000000..0d69fabc9c7
+index 00000000000..c20a88ecb3e
 --- /dev/null
 +++ b/make/modules/javafx.graphics/Java.gmk
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,23 @@
 +DISABLED_WARNINGS_java := try deprecation rawtypes unchecked serial cast removal preview restricted dangling-doc-comments overloads module this-escape \
 +                          lossy-conversions static auxiliaryclass exports fallthrough
-+JAVAC_FLAGS += -encoding UTF-8
 +
-+COPY += .gif .png .wav .txt .xml .css .frag .obj .properties
++# Patch the module with ANTLR runtime for compiling ANTLR-generated parser code
++JAVAC_FLAGS += -encoding UTF-8 --patch-module javafx.graphics="$(TOPDIR)/make/data/javafx-tools/antlr-4.13.2-complete.jar"
 +
++COPY += .gif .png .wav .txt .xml .css .frag .obj .properties .metallib
++
++# Main module sources (always included)
++SRC += $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/java
 +SRC += $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/resources
-+SRC += $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/gensrc/jsl-prism
-+SRC += $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/gensrc/jsl-decora
-+SRC += $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/hlsl/Prism
-+SRC += $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/hlsl/Decora
 +
-+COPY_FILES += $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/gensrc/jsl-prism
-+COPY_FILES += $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/gensrc/jsl-decora
-+COPY_FILES += $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/hlsl/Prism
-+COPY_FILES += $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/hlsl/Decora
++# Generated shader sources - only include if they exist
++# This allows core classes to compile first, then gensrc creates these, then full recompile
++GENSRC_SHADER_DIR := $(SUPPORT_OUTPUTDIR)/gensrc/javafx.graphics/com
++ifneq ($(wildcard $(GENSRC_SHADER_DIR)),)
++  SRC += $(GENSRC_SHADER_DIR)
++endif
 +
 +CLEAN_FILES += $(wildcard \
 +    $(TOPDIR)/src/javafx.graphics/share/classes/com/sun/javafx/tk/quantum/*.properties)
@@ -361,10 +810,10 @@ index 00000000000..0d69fabc9c7
 +TARGETS += $(call CreateHkTargets, $(CLEAN_FILES))
 diff --git a/make/modules/javafx.graphics/Lib.gmk b/make/modules/javafx.graphics/Lib.gmk
 new file mode 100644
-index 00000000000..60e79743506
+index 00000000000..7cc651d28f3
 --- /dev/null
 +++ b/make/modules/javafx.graphics/Lib.gmk
-@@ -0,0 +1,198 @@
+@@ -0,0 +1,218 @@
 +include CopyFiles.gmk
 +include LibCommon.gmk
 +
@@ -421,22 +870,42 @@ index 00000000000..60e79743506
 +TARGETS += $(BUILD_LIBPRISM_ES2)
 +endif
 +
++ifeq ($(call isTargetOs, macosx), true)
++################################################################################
++## Build libprism_mtl
++################################################################################
++
++SRC_SHARE_PRISM_MTL = $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-prism-mtl
++PLATFORM_SRC := $(SRC_SHARE_PRISM_MTL)
++
++# Metal library requires shader headers generated by gensrc phase
++# OpenJDK build system guarantees gensrc completes before libs for the same module
++MTL_HEADERS_DIR := $(SUPPORT_OUTPUTDIR)/javafx-build/javafx.graphics/mtl-headers
++
++$(eval $(call SetupJdkLibrary, BUILD_LIBPRISM_MTL, \
++    NAME := prism_mtl, \
++    OPTIMIZATION := HIGH, \
++    LIBS_macosx := -framework AppKit -framework ApplicationServices -framework Carbon -framework Metal -framework OpenGL -framework QuartzCore -framework Security, \
++    SRC := $(PLATFORM_SRC), \
++    CFLAGS_macosx := -I$(SRC_SHARE_PRISM_MTL), \
++    CFLAGS_macosx += -I$(MTL_HEADERS_DIR), \
++    CFLAGS := -Wno-error, \
++))
++
++TARGETS += $(BUILD_LIBPRISM_MTL)
++
++endif
++
++
 +ifeq ($(call isTargetOs, windows), true)
 +################################################################################
 +## Build libprism_d3d
 +################################################################################
 +
-+$(eval $(call SetupJdkLibrary, BUILD_LIBPRISM_D3D, \
-+    NAME := prism_d3d, \
-+    OPTIMIZATION := HIGH, \
-+    CFLAGS_windows := -EHsc -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR -DINLINE=__inline -DUNICODE -D_UNICODE -permissive -std:c++14, \
-+    CFLAGS_windows += -I$(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/headers/PrismD3D, \
-+    LIBS_windows := -manifest -dynamicbase -nxcompat user32.lib, \
-+    SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-prism-d3d, \
-+    EXTRA_SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-prism-d3d/hlsl, \
-+))
-+
-+TARGETS += $(BUILD_LIBPRISM_D3D)
++# Create the D3D prism library
++ifeq ($(call isTargetOs, windows), true)
++  include lib/D3DLibraries.gmk
++endif
 +endif
 +
 +################################################################################
@@ -463,7 +932,7 @@ index 00000000000..60e79743506
 +    LIBS_linux := -lX11, \
 +    LIBS_macosx := -framework AppKit -framework ApplicationServices -framework Metal -framework Carbon -framework OpenGL -framework QuartzCore -framework Security -framework Network, \
 +    LIBS_ios := -framework AppKit -framework ApplicationServices -framework Metal -framework Carbon -framework OpenGL -framework QuartzCore -framework Security -framework Network, \
-+    LIBS_windows := -manifest -dynamicbase -nxcompat delayimp.lib gdi32.lib urlmon.lib Comdlg32.lib winmm.lib imm32.lib shell32.lib Uiautomationcore.lib dwmapi.lib version.lib /DELAYLOAD:user32.dll /DELAYLOAD:urlmon.dll /DELAYLOAD:winmm.dll /DELAYLOAD:shell32.dll /DELAYLOAD:Uiautomationcore.dll /DELAYLOAD:dwmapi.dll /DELAYLOAD:version.dll, \
++    LIBS_windows := -manifest -dynamicbase -nxcompat delayimp.lib gdi32.lib urlmon.lib Comdlg32.lib winmm.lib imm32.lib shell32.lib Uiautomationcore.lib dwmapi.lib shlwapi.lib version.lib /DELAYLOAD:user32.dll /DELAYLOAD:urlmon.dll /DELAYLOAD:winmm.dll /DELAYLOAD:shell32.dll /DELAYLOAD:Uiautomationcore.dll /DELAYLOAD:dwmapi.dll /DELAYLOAD:version.dll, \
 +    EXTRA_FILES := $(EXTRA_GLASS_SRC), \
 +    CFLAGS_macosx := -DMACOS_MIN_VERSION_MAJOR=11 -DMACOS_MIN_VERSION_MINOR=0, \
 +    CFLAGS_windows := -EHsc -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR -DINLINE=__inline -DUNICODE -D_UNICODE -permissive -std:c++14, \
@@ -563,14 +1032,108 @@ index 00000000000..60e79743506
 +))
 +
 +TARGETS += $(BUILD_LIBJAVAFXIIO)
+diff --git a/make/modules/javafx.graphics/lib/D3DLibraries.gmk b/make/modules/javafx.graphics/lib/D3DLibraries.gmk
+new file mode 100644
+index 00000000000..87115a85c77
+--- /dev/null
++++ b/make/modules/javafx.graphics/lib/D3DLibraries.gmk
+@@ -0,0 +1,88 @@
++include MakeIncludeStart.gmk
++ifeq ($(INCLUDE), true)
++
++D3D_SHADER_SRC_DIR := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-prism-d3d
++D3D_SHADER_GEN_DIR := $(SUPPORT_OUTPUTDIR)/headers/javafx.graphics/prism_d3d
++
++D3D_SHADER_HEADERS := \
++    $(D3D_SHADER_GEN_DIR)/PassThroughVS.h \
++    $(D3D_SHADER_GEN_DIR)/hlsl/Mtl1VS_Obj.h
++
++$(D3D_SHADER_GEN_DIR)/PassThroughVS.h: $(D3D_SHADER_SRC_DIR)/PassThroughVS.hlsl
++	$(call LogInfo, Compiling passthrough shader $<)
++	$(call MakeDir, $(@D))
++	$(FXC) /nologo /T vs_3_0 /Fh $(@) /E passThrough $<
++
++$(D3D_SHADER_GEN_DIR)/hlsl/Mtl1VS_Obj.h: $(D3D_SHADER_SRC_DIR)/hlsl/Mtl1VS.hlsl
++	$(call LogInfo, Compiling vertex shader $<)
++	$(call MakeDir, $(@D))
++	$(FXC) /nologo /T vs_3_0 /Fh $(@) /DVertexType=VsInput $<
++
++D3D_PIXEL_SHADER_SRC := $(D3D_SHADER_SRC_DIR)/hlsl/Mtl1PS.hlsl
++
++# All pixel shader combinations
++D3D_PIXEL_SPEC_VALUES := 1 2 3
++D3D_PIXEL_STYPE_VALUES := 0 1 2 3
++D3D_PIXEL_STYPE_SUFFIXES := n t c m
++
++# Base pixel shader variants
++D3D_PIXEL_SHADER_VARIANTS := \
++    Mtl1PS|Spec=0|SType=0 \
++    Mtl1PS_i|Spec=0|SType=0|IllumMap=1
++
++# pixel shader variants without bump, without illumination
++$(foreach spec,$(D3D_PIXEL_SPEC_VALUES),\
++  $(foreach stype,$(D3D_PIXEL_STYPE_VALUES),\
++    $(eval D3D_PIXEL_SHADER_VARIANTS += Mtl1PS_s$(spec)$(word $(shell echo $$(($(stype)+1))),$(D3D_PIXEL_STYPE_SUFFIXES))|Spec=$(spec)|SType=$(stype))))
++
++# pixel shader variants with bump, without illumination
++$(foreach spec,$(D3D_PIXEL_SPEC_VALUES),\
++  $(foreach stype,$(D3D_PIXEL_STYPE_VALUES),\
++    $(eval D3D_PIXEL_SHADER_VARIANTS += Mtl1PS_b$(spec)$(word $(shell echo $$(($(stype)+1))),$(D3D_PIXEL_STYPE_SUFFIXES))|Spec=$(spec)|SType=$(stype)|Bump=1)))
++
++# pixel shader variants with illumination, without bump
++$(foreach spec,$(D3D_PIXEL_SPEC_VALUES),\
++  $(foreach stype,$(D3D_PIXEL_STYPE_VALUES),\
++    $(eval D3D_PIXEL_SHADER_VARIANTS += Mtl1PS_s$(spec)$(word $(shell echo $$(($(stype)+1))),$(D3D_PIXEL_STYPE_SUFFIXES))i|Spec=$(spec)|SType=$(stype)|IllumMap=1)))
++
++# pixel shader variants with bump and illumination
++$(foreach spec,$(D3D_PIXEL_SPEC_VALUES),\
++  $(foreach stype,$(D3D_PIXEL_STYPE_VALUES),\
++    $(eval D3D_PIXEL_SHADER_VARIANTS += Mtl1PS_b$(spec)$(word $(shell echo $$(($(stype)+1))),$(D3D_PIXEL_STYPE_SUFFIXES))i|Spec=$(spec)|SType=$(stype)|Bump=1|IllumMap=1)))
++
++# function to create pixel shader rule
++define CreatePixelShaderVariant
++  $(eval _NAME := $(word 1,$(subst |, ,$(1))))
++  $(eval _DEFS := $(subst |, ,$(wordlist 2,99,$(subst |, ,$(1)))))
++  $(eval _FLAGS := $(foreach def,$(_DEFS),/D$(def)))
++
++$(D3D_SHADER_GEN_DIR)/hlsl/$(_NAME).h: $(D3D_PIXEL_SHADER_SRC)
++	$$(call LogInfo, Compiling pixel shader $(_NAME).h)
++	$$(call MakeDir, $$(@D))
++	$$(FXC) /nologo /T ps_3_0 /Fh $$(@) $(_FLAGS) $$<
++
++  D3D_PIXEL_SHADER_HEADERS += $(D3D_SHADER_GEN_DIR)/hlsl/$(_NAME).h
++endef
++
++$(foreach var,$(D3D_PIXEL_SHADER_VARIANTS),$(eval $(call CreatePixelShaderVariant,$(var))))
++
++D3D_SHADER_HEADERS += $(D3D_PIXEL_SHADER_HEADERS)
++
++$(eval $(call SetupJdkLibrary, BUILD_LIBPRISM_D3D, \
++    NAME := prism_d3d, \
++    OPTIMIZATION := HIGH, \
++    EXTRA_HEADER_DIRS := $(D3D_SHADER_GEN_DIR), \
++    CFLAGS_windows := -EHsc -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR -DINLINE=__inline -DUNICODE -D_UNICODE -permissive -std:c++14, \
++    LIBS_windows := -manifest -dynamicbase -nxcompat user32.lib, \
++    SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-prism-d3d, \
++    EXTRA_SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-prism-d3d/hlsl, \
++))
++
++$(BUILD_LIBPRISM_D3D): $(D3D_SHADER_HEADERS)
++
++TARGETS += $(BUILD_LIBPRISM_D3D)
++
++################################################################################
++
++endif # include guard
++include MakeIncludeEnd.gmk
 diff --git a/make/modules/javafx.media/Java.gmk b/make/modules/javafx.media/Java.gmk
 new file mode 100644
-index 00000000000..4ee4ef7f9d2
+index 00000000000..401bc9cd179
 --- /dev/null
 +++ b/make/modules/javafx.media/Java.gmk
 @@ -0,0 +1,2 @@
 +DISABLED_WARNINGS_java := try deprecation rawtypes unchecked serial cast removal preview restricted dangling-doc-comments overloads module this-escape \
-+                          lossy-conversions static auxiliaryclass exports fallthrough varargs 
++                          lossy-conversions static auxiliaryclass exports fallthrough varargs
 diff --git a/make/modules/javafx.swing/Java.gmk b/make/modules/javafx.swing/Java.gmk
 new file mode 100644
 index 00000000000..22774b6d247

@@ -10,12 +10,12 @@ jobs:
     steps:
       - name: Checkout builder repo
         uses: actions/checkout@v4
-      - name: Set up JDK 24
+      - name: Set up JDK 25
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: actions/setup-java@v4
         with:
-          java-version: '24'
+          java-version: '25'
           distribution: 'temurin'
       - name: 'Install toolchain and dependencies'
         run: |
@@ -29,13 +29,11 @@ jobs:
           git clone https://github.com/openjdk/mobile.git
           cd mobile
           patch -p1 <../openjdk-ext/src/jfx.patch
+          cp -r ../openjdk-ext/src/make/data/javafx-tools make/data
           cd ..
-      - name: Clone OpenJFX
+      - name: Clone OpenJFX and build OpenJDK Mobile with OpenJFX
         run: |
           git clone https://github.com/openjdk/jfx.git
-          cd jfx
-          sh gradlew shadersClasses
-          cd ..
           cd mobile
           sh configure --with-conf-name=jfx --with-openjfx-modules=../jfx --disable-warnings-as-errors
           cd build/jfx
