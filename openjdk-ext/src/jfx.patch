@@ -410,9 +410,9 @@ index 00000000000..60e79743506
 +    LIBS_macosx := -framework AppKit -framework ApplicationServices -framework Carbon -framework OpenGL -framework QuartzCore -framework Security, \
 +    LIBS_ios := -framework AppKit -framework ApplicationServices -framework Carbon -framework OpenGL -framework QuartzCore -framework Security, \
 +    SRC := $(PLATFORM_SRC), \
-+    EXTRA_FILES := $(SRC_SHARE_PRISM_ES2)/GLContext.c, \
-+    EXTRA_FILES += $(SRC_SHARE_PRISM_ES2)/GLFactory.c, \
-+    EXTRA_FILES += $(SRC_SHARE_PRISM_ES2)/GLPixelFormat.c, \
++    EXTRA_FILES := $(SRC_SHARE_PRISM_ES2)/GLContext.c \
++           $(SRC_SHARE_PRISM_ES2)/GLFactory.c \
++           $(SRC_SHARE_PRISM_ES2)/GLPixelFormat.c, \
 +    CFLAGS_macosx := -I$(SRC_SHARE_PRISM_ES2), \
 +    CFLAGS_ios := -I$(SRC_SHARE_PRISM_ES2), \
 +    CFLAGS := -Wno-error, \
@@ -429,8 +429,8 @@ index 00000000000..60e79743506
 +$(eval $(call SetupJdkLibrary, BUILD_LIBPRISM_D3D, \
 +    NAME := prism_d3d, \
 +    OPTIMIZATION := HIGH, \
-+    CFLAGS_windows := -EHsc -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR -DINLINE=__inline -DUNICODE -D_UNICODE -permissive -std:c++14, \
-+    CFLAGS_windows += -I$(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/headers/PrismD3D, \
++    CFLAGS_windows := -EHsc -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR -DINLINE=__inline -DUNICODE -D_UNICODE -permissive -std:c++14 \
++           -I$(OPENJFX_MODULES_SRC)/modules/javafx.graphics/build/headers/PrismD3D, \
 +    LIBS_windows := -manifest -dynamicbase -nxcompat user32.lib, \
 +    SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-prism-d3d, \
 +    EXTRA_SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-prism-d3d/hlsl, \
@@ -481,12 +481,12 @@ index 00000000000..60e79743506
 +    NAME := glassgtk3, \
 +    LINK_TYPE := C++, \
 +    OPTIMIZATION := HIGH, \
-+    CFLAGS := $(GTK_CFLAGS), \
-+    CFLAGS += -I$(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-glass/gtk/libpipewire/include, \
++    CFLAGS := $(GTK_CFLAGS) \
++           -I$(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-glass/gtk/libpipewire/include, \
 +    EXCLUDE_FILES := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-glass/gtk/launcher.c, \
-+    CXXFLAGS := $(GTK_CFLAGS), \
-+    CXXFLAGS += -DGTK_3_MIN_MINOR_VERSION=20, \
-+    CXXFLAGS += -DGTK_3_MIN_MICRO_VERSION=0, \
++    CXXFLAGS := $(GTK_CFLAGS) \
++           -DGTK_3_MIN_MINOR_VERSION=20 \
++           -DGTK_3_MIN_MICRO_VERSION=0, \
 +    LIBS_linux := $(GTK_LIBS) -lX11 -ldl, \
 +    SRC := $(OPENJFX_MODULES_SRC)/modules/javafx.graphics/src/main/native-glass/gtk, \
 +))
